@@ -309,9 +309,9 @@ class PI0Policy(PreTrainedPolicy):
         batch = self.normalize_inputs(batch)
         batch = self.normalize_targets(batch)
 
-        images, img_masks = self.prepare_images(batch)
-        state = self.prepare_state(batch)
-        lang_tokens, lang_masks = self.prepare_language(batch)
+        images, img_masks = self.prepare_images(batch) # 保持长宽比 剪裁图片至224x224并填充155
+        state = self.prepare_state(batch) # 扩充状态向量至最大维度，填充0
+        lang_tokens, lang_masks = self.prepare_language(batch) # 将文本输入token化(转换成数字)，并填充
         actions = self.prepare_action(batch)
         actions_is_pad = batch.get("action_is_pad")
 
