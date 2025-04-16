@@ -104,14 +104,15 @@ class LeRobotDatasetMetadata:
     def load_metadata(self):
         self.info = load_info(self.root)
         check_version_compatibility(self.repo_id, self._version, CODEBASE_VERSION)
-        self.tasks, self.task_to_task_index = load_tasks(self.root)
-        self.episodes = load_episodes(self.root)
+        self.tasks, self.task_to_task_index = load_tasks(self.root) # ({0: 'Pick the cube'}, {'Pick the cube': 0})
+        self.episodes = load_episodes(self.root) #{0: {'episode_index': 0, 'tasks': [...], 'length': 431}, ... },其中431为该episode的动作维度
         if self._version < packaging.version.parse("v2.1"):
             self.stats = load_stats(self.root)
             self.episodes_stats = backward_compatible_episodes_stats(self.stats, self.episodes)
         else:
-            self.episodes_stats = load_episodes_stats(self.root)
-            self.stats = aggregate_stats(list(self.episodes_stats.values()))
+            self.episodes_stats = load_episodes_stats(self.root) # {'episode_index': 0, 'stats': {...}}, ... } 
+            # episodes_stats包括 每个episode 各属性(action obs.state obs.images timestamp frame_index episode_index index task_index) 的 min max mean std count
+            self.stats = aggregate_stats(list(self.episodes_stats.values())) # 整合所有信息，例如 count为求累和
 
     def pull_from_repo(
         self,
@@ -483,7 +484,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         self.root.mkdir(exist_ok=True, parents=True)
 
-        # Load metadata
+        # Load metadata 读取meta文件夹 有info tasks episodes episodes_stas, 
         self.meta = LeRobotDatasetMetadata(
             self.repo_id, self.root, self.revision, force_cache_sync=force_cache_sync
         )
@@ -491,7 +492,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
             episodes_stats = [self.meta.episodes_stats[ep_idx] for ep_idx in self.episodes]
             self.stats = aggregate_stats(episodes_stats)
 
-        # Load actual data
+        # Load actual data, 读取data文件夹数据
+        # hf_dataset.data维度:[sum(episodes.count), 7], 7:['action', 'observation.state', 'timestamp', 'frame_index', 'episode_index', 'index', 'task_index']
         try:
             if force_cache_sync:
                 raise FileNotFoundError
@@ -502,18 +504,18 @@ class LeRobotDataset(torch.utils.data.Dataset):
             self.download_episodes(download_videos)
             self.hf_dataset = self.load_hf_dataset()
 
-        self.episode_data_index = get_episode_data_index(self.meta.episodes, self.episodes)
+        self.episode_data_index = get_episode_data_index(self.meta.episodes, self.episodes) # 将episode的length逐渐累加，并在初始插值0，删除末尾 [3,2,3] -> ('from':[0,3,5], 'to':[3,5,8])
 
-        # Check timestamps
-        timestamps = torch.stack(self.hf_dataset["timestamp"]).numpy()
-        episode_indices = torch.stack(self.hf_dataset["episode_index"]).numpy()
-        ep_data_index_np = {k: t.numpy() for k, t in self.episode_data_index.items()}
+        # Check timestamps  以下注释皆 假设三个epis长度为[3,2,3],
+        timestamps = torch.stack(self.hf_dataset["timestamp"]).numpy() # epi每个action对应的timestamp 返回 [0/30, 1/30, 2/30, 0/30, 1/30, 0/30, 1/30, 2/30]
+        episode_indices = torch.stack(self.hf_dataset["episode_index"]).numpy() #  返回 [0,0,0,1,1,2,2,2]
+        ep_data_index_np = {k: t.numpy() for k, t in self.episode_data_index.items()} # 同 episode_data_index
         check_timestamps_sync(timestamps, episode_indices, ep_data_index_np, self.fps, self.tolerance_s)
 
         # Setup delta_indices
         if self.delta_timestamps is not None:
             check_delta_timestamps(self.delta_timestamps, self.fps, self.tolerance_s)
-            self.delta_indices = get_delta_indices(self.delta_timestamps, self.fps)
+            self.delta_indices = get_delta_indices(self.delta_timestamps, self.fps) # 返回 50,步数
 
     def push_to_hub(
         self,

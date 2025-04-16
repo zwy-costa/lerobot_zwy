@@ -83,9 +83,9 @@ def create_sinusoidal_pos_embedding(
     period = min_period * (max_period / min_period) ** fraction
 
     # Compute the outer product
-    scaling_factor = 1.0 / period * 2 * math.pi
-    sin_input = scaling_factor[None, :] * time[:, None]
-    pos_emb = torch.cat([torch.sin(sin_input), torch.cos(sin_input)], dim=1)
+    scaling_factor = 1.0 / period * 2 * math.pi #[512]
+    sin_input = scaling_factor[None, :] * time[:, None] # [1, 512] * [10, 1] = [10, 512], 广播机制
+    pos_emb = torch.cat([torch.sin(sin_input), torch.cos(sin_input)], dim=1) # [10, 1024]
     return pos_emb
 
 
@@ -309,10 +309,10 @@ class PI0Policy(PreTrainedPolicy):
         batch = self.normalize_inputs(batch)
         batch = self.normalize_targets(batch)
 
-        images, img_masks = self.prepare_images(batch) # 保持长宽比 剪裁图片至224x224并填充155
-        state = self.prepare_state(batch) # 扩充状态向量至最大维度，填充0
-        lang_tokens, lang_masks = self.prepare_language(batch) # 将文本输入token化(转换成数字)，并填充
-        actions = self.prepare_action(batch)
+        images, img_masks = self.prepare_images(batch) # 保持长宽比 剪裁图片至224x224并填充155(灰度)
+        state = self.prepare_state(batch) # 扩充状态向量至最大维度32，填充0
+        lang_tokens, lang_masks = self.prepare_language(batch) # 将文本输入token化(转换成数字)，同时扩充至48
+        actions = self.prepare_action(batch) # 扩充至维度32，并填充0
         actions_is_pad = batch.get("action_is_pad")
 
         loss_dict = {}
@@ -519,7 +519,7 @@ class PI0FlowMatching(nn.Module):
             img,
             img_mask,
         ) in zip(images, img_masks, strict=False):
-            img_emb = self.paligemma_with_expert.embed_image(img)
+            img_emb = self.paligemma_with_expert.embed_image(img) # [10,3,224,224] -> [10,256,2048]
             img_emb = img_emb.to(dtype=torch.bfloat16)
 
             # Normalize image embeddings
@@ -527,7 +527,7 @@ class PI0FlowMatching(nn.Module):
             img_emb = img_emb * torch.tensor(img_emb_dim**0.5, dtype=img_emb.dtype, device=img_emb.device)
 
             bsize, num_img_embs = img_emb.shape[:2]
-            img_mask = img_mask[:, None].expand(bsize, num_img_embs)
+            img_mask = img_mask[:, None].expand(bsize, num_img_embs) # [10,256]
 
             embs.append(img_emb)
             pad_masks.append(img_mask)
@@ -535,21 +535,21 @@ class PI0FlowMatching(nn.Module):
             # Create attention masks so that image tokens attend to each other
             att_masks += [0] * num_img_embs
 
-        lang_emb = self.paligemma_with_expert.embed_language_tokens(lang_tokens)
+        lang_emb = self.paligemma_with_expert.embed_language_tokens(lang_tokens) # [10,48] -> [10,48,2048]
 
         # Normalize language embeddings
         lang_emb_dim = lang_emb.shape[-1]
         lang_emb = lang_emb * math.sqrt(lang_emb_dim)
 
         embs.append(lang_emb)
-        pad_masks.append(lang_masks)
+        pad_masks.append(lang_masks) # [10,48]
 
         # full attention between image and language inputs
         num_lang_embs = lang_emb.shape[1]
         att_masks += [0] * num_lang_embs
 
-        embs = torch.cat(embs, dim=1)
-        pad_masks = torch.cat(pad_masks, dim=1)
+        embs = torch.cat(embs, dim=1) #[[10,256,2048], [10,256,2048], [10,48,2048]] -> [10,560,2048]
+        pad_masks = torch.cat(pad_masks, dim=1) #[[10,256],[10,256],[10,48]] -> [10,560]
         att_masks = torch.tensor(att_masks, dtype=torch.bool, device=pad_masks.device)
         att_masks = att_masks[None, :].expand(bsize, len(att_masks))
 
@@ -562,9 +562,9 @@ class PI0FlowMatching(nn.Module):
         att_masks = []
 
         # Embed state
-        state_emb = self.state_proj(state)
+        state_emb = self.state_proj(state) # [10,32] -> [10,1024]
         state_emb = state_emb.to(dtype=torch.bfloat16)
-        embs.append(state_emb[:, None, :])
+        embs.append(state_emb[:, None, :]) # [] -> [10,1,1024]
         bsize = state_emb.shape[0]
         dtype = state_emb.dtype
         device = state_emb.device
@@ -575,17 +575,17 @@ class PI0FlowMatching(nn.Module):
         # Set attention masks so that image and language inputs do not attend to state or actions
         att_masks += [1]
 
-        # Embed timestep using sine-cosine positional encoding with sensitivity in the range [0, 1]
+        # Embed timestep using sine-cosine positional encoding with sensitivity in the range [0, 1] 正弦位置编码函数
         time_emb = create_sinusoidal_pos_embedding(
             timestep, self.config.proj_width, min_period=4e-3, max_period=4.0, device=device
-        )
+        ) # time_emb 维度: [10,1024]
         time_emb = time_emb.type(dtype=dtype)
 
         # Fuse timestep + action information using an MLP
-        action_emb = self.action_in_proj(noisy_actions)
+        action_emb = self.action_in_proj(noisy_actions) #[10,50,32] -> [10,50,1024]
 
-        time_emb = time_emb[:, None, :].expand_as(action_emb)
-        action_time_emb = torch.cat([action_emb, time_emb], dim=2)
+        time_emb = time_emb[:, None, :].expand_as(action_emb) # [10,50,1024]
+        action_time_emb = torch.cat([action_emb, time_emb], dim=2) # [10,50,2048]
 
         action_time_emb = self.action_time_mlp_in(action_time_emb)
         action_time_emb = F.silu(action_time_emb)  # swish == silu
@@ -613,10 +613,10 @@ class PI0FlowMatching(nn.Module):
     ) -> Tensor:
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
         if noise is None:
-            noise = self.sample_noise(actions.shape, actions.device)
+            noise = self.sample_noise(actions.shape, actions.device) #[10,50,32]
 
         if time is None:
-            time = self.sample_time(actions.shape[0], actions.device)
+            time = self.sample_time(actions.shape[0], actions.device) #[10]
 
         time_expanded = time[:, None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions

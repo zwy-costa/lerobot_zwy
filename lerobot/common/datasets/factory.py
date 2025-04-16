@@ -86,8 +86,9 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
         ds_meta = LeRobotDatasetMetadata(
             cfg.dataset.repo_id, root=cfg.dataset.root, revision=cfg.dataset.revision
         )
-        delta_timestamps = resolve_delta_timestamps(cfg.policy, ds_meta)
-        dataset = LeRobotDataset(
+        delta_timestamps = resolve_delta_timestamps(cfg.policy, ds_meta) # 只返回action，{'action': [0/30, 1/30, ..., 49/30 ]}, 30是数据集中的fps, 50
+        # 只读取data和meta文件夹中数据，没有读取videos文件夹. 有info.json文件里面所有信息
+        dataset = LeRobotDataset( 
             cfg.dataset.repo_id,
             root=cfg.dataset.root,
             episodes=cfg.dataset.episodes,
@@ -110,6 +111,7 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
             f"{pformat(dataset.repo_id_to_index, indent=2)}"
         )
 
+    # 初始化videos的 mean 和 std
     if cfg.dataset.use_imagenet_stats:
         for key in dataset.meta.camera_keys:
             for stats_type, stats in IMAGENET_STATS.items():
