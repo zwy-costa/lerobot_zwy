@@ -30,9 +30,9 @@ from transformers.models.auto import CONFIG_MAPPING
 from lerobot.common.policies.pi0.flex_attention import flex_attention_forward
 
 
-def apply_rope(x, positions, max_wavelength=10_000):
+def apply_rope(x, positions, max_wavelength=10_000): #旋转位置编码
     """
-    Applies RoPE positions [B, L] to x [B, L, H, D].
+    Applies RoPE positions [B, L] to x [B, L, H, D]. positions形状是[B,L], x形状是[B,L,H,D].RoPE(rotary position embed)
     """
     d_half = x.shape[-1] // 2
     device = x.device
@@ -41,9 +41,9 @@ def apply_rope(x, positions, max_wavelength=10_000):
 
     freq_exponents = (2.0 / x.shape[-1]) * torch.arange(d_half, dtype=torch.float32, device=device)
     timescale = max_wavelength**freq_exponents
-    radians = positions[..., None].to(torch.float32) / timescale[None, None, :].to(torch.float32)
+    radians = positions[..., None].to(torch.float32) / timescale[None, None, :].to(torch.float32) # [10,611,1] / [1,1,128] = [10,611,128]
 
-    radians = radians[..., None, :]
+    radians = radians[..., None, :] # [10,611,128] -> [10,611,1,128]
 
     sin = torch.sin(radians)  # .to(dtype=dtype)
     cos = torch.cos(radians)  # .to(dtype=dtype)
@@ -242,13 +242,13 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
             batch_size = hidden_states.shape[0]
 
         # RMSNorm
-        num_layers = self.paligemma.config.text_config.num_hidden_layers
-        head_dim = self.paligemma.config.text_config.head_dim
+        num_layers = self.paligemma.config.text_config.num_hidden_layers # 18
+        head_dim = self.paligemma.config.text_config.head_dim # 256
         for layer_idx in range(num_layers):
             query_states = []
             key_states = []
             value_states = []
-            for i, hidden_states in enumerate(inputs_embeds):
+            for i, hidden_states in enumerate(inputs_embeds): # [10,560,2048] / [10,51,1024]
                 if hidden_states is None:
                     continue
                 layer = models[i].layers[layer_idx]
@@ -256,26 +256,26 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
                 # hidden_states = hidden_states * normalizer
                 hidden_states = layer.input_layernorm(hidden_states)
 
-                input_shape = hidden_states.shape[:-1]
-                hidden_shape = (*input_shape, -1, layer.self_attn.head_dim)
+                input_shape = hidden_states.shape[:-1] # [10,560]
+                hidden_shape = (*input_shape, -1, layer.self_attn.head_dim) # [10,560,-1,256] / [10,51,-1,256]
 
                 hidden_states = hidden_states.to(dtype=torch.bfloat16)
-                query_state = layer.self_attn.q_proj(hidden_states).view(hidden_shape)
-                key_state = layer.self_attn.k_proj(hidden_states).view(hidden_shape)
-                value_state = layer.self_attn.v_proj(hidden_states).view(hidden_shape)
+                query_state = layer.self_attn.q_proj(hidden_states).view(hidden_shape) # [10,560,2048]->[10,560,8,256] / [10,51,1024]->[10,51,2048]->[10,51,8,256] 
+                key_state = layer.self_attn.k_proj(hidden_states).view(hidden_shape) # [10,560,2048]->[10,560,256]->[10,560,1,256] / ...->[10,51,1,256]
+                value_state = layer.self_attn.v_proj(hidden_states).view(hidden_shape) # 同上
 
                 query_states.append(query_state)
                 key_states.append(key_state)
                 value_states.append(value_state)
 
-            # B,L,H,D with L sequence length, H number of heads, D head dim
+            # B,L,H,D with L sequence length, H number of heads(多头), D head dim(应该翻译成单头对应的num_hidden)
             # concatenate on the number of embeddings/tokens
-            query_states = torch.cat(query_states, dim=1)
-            key_states = torch.cat(key_states, dim=1)
-            value_states = torch.cat(value_states, dim=1)
+            query_states = torch.cat(query_states, dim=1) # -> [10,611,8,256]
+            key_states = torch.cat(key_states, dim=1) # -> [10,611,1,256]
+            value_states = torch.cat(value_states, dim=1) # -> [10,611,1,256]
 
-            query_states = apply_rope(query_states, position_ids)
-            key_states = apply_rope(key_states, position_ids)
+            query_states = apply_rope(query_states, position_ids) # position_ids:[10,611]
+            key_states = apply_rope(key_states, position_ids) 
 
             if use_cache and past_key_values is None:
                 past_key_values = {}

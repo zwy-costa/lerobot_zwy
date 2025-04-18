@@ -309,9 +309,9 @@ class PI0Policy(PreTrainedPolicy):
         batch = self.normalize_inputs(batch)
         batch = self.normalize_targets(batch)
 
-        images, img_masks = self.prepare_images(batch) # 保持长宽比 剪裁图片至224x224并填充155(灰度)
+        images, img_masks = self.prepare_images(batch) # 保持长宽比 剪裁图片至224x224并填充155(灰度). img_masks:[[10],[10]]
         state = self.prepare_state(batch) # 扩充状态向量至最大维度32，填充0
-        lang_tokens, lang_masks = self.prepare_language(batch) # 将文本输入token化(转换成数字)，同时扩充至48
+        lang_tokens, lang_masks = self.prepare_language(batch) # 将文本输入token化(转换成数字)，同时扩充至48. lang_masks:[10,48]
         actions = self.prepare_action(batch) # 扩充至维度32，并填充0
         actions_is_pad = batch.get("action_is_pad")
 
@@ -527,7 +527,7 @@ class PI0FlowMatching(nn.Module):
             img_emb = img_emb * torch.tensor(img_emb_dim**0.5, dtype=img_emb.dtype, device=img_emb.device)
 
             bsize, num_img_embs = img_emb.shape[:2]
-            img_mask = img_mask[:, None].expand(bsize, num_img_embs) # [10,256]
+            img_mask = img_mask[:, None].expand(bsize, num_img_embs) # [10] -> [10,256]
 
             embs.append(img_emb)
             pad_masks.append(img_mask)
@@ -549,7 +549,7 @@ class PI0FlowMatching(nn.Module):
         att_masks += [0] * num_lang_embs
 
         embs = torch.cat(embs, dim=1) #[[10,256,2048], [10,256,2048], [10,48,2048]] -> [10,560,2048]
-        pad_masks = torch.cat(pad_masks, dim=1) #[[10,256],[10,256],[10,48]] -> [10,560]
+        pad_masks = torch.cat(pad_masks, dim=1) #[[10,256],[10,256],[10,48]] -> [10,560],图像部分全为true,语言部分跟给定lang_task长度有关
         att_masks = torch.tensor(att_masks, dtype=torch.bool, device=pad_masks.device)
         att_masks = att_masks[None, :].expand(bsize, len(att_masks))
 
@@ -569,7 +569,7 @@ class PI0FlowMatching(nn.Module):
         dtype = state_emb.dtype
         device = state_emb.device
 
-        state_mask = torch.ones(bsize, 1, dtype=torch.bool, device=device)
+        state_mask = torch.ones(bsize, 1, dtype=torch.bool, device=device) # [10,1]
         pad_masks.append(state_mask)
 
         # Set attention masks so that image and language inputs do not attend to state or actions
@@ -587,7 +587,7 @@ class PI0FlowMatching(nn.Module):
         time_emb = time_emb[:, None, :].expand_as(action_emb) # [10,50,1024]
         action_time_emb = torch.cat([action_emb, time_emb], dim=2) # [10,50,2048]
 
-        action_time_emb = self.action_time_mlp_in(action_time_emb)
+        action_time_emb = self.action_time_mlp_in(action_time_emb) # [10,50,2048] -> [10,50,1024]
         action_time_emb = F.silu(action_time_emb)  # swish == silu
         action_time_emb = self.action_time_mlp_out(action_time_emb)
 
@@ -595,14 +595,14 @@ class PI0FlowMatching(nn.Module):
         embs.append(action_time_emb)
 
         bsize, action_time_dim = action_time_emb.shape[:2]
-        action_time_mask = torch.ones(bsize, action_time_dim, dtype=torch.bool, device=device)
+        action_time_mask = torch.ones(bsize, action_time_dim, dtype=torch.bool, device=device) # [10,50],全为true
         pad_masks.append(action_time_mask)
 
         # Set attention masks so that image, language and state inputs do not attend to action tokens
         att_masks += [1] + ([0] * (self.config.n_action_steps - 1))
 
         embs = torch.cat(embs, dim=1)
-        pad_masks = torch.cat(pad_masks, dim=1)
+        pad_masks = torch.cat(pad_masks, dim=1) # [[10,1],[10,50]] -> [10,51]
         att_masks = torch.tensor(att_masks, dtype=embs.dtype, device=embs.device)
         att_masks = att_masks[None, :].expand(bsize, len(att_masks))
 
@@ -619,19 +619,19 @@ class PI0FlowMatching(nn.Module):
             time = self.sample_time(actions.shape[0], actions.device) #[10]
 
         time_expanded = time[:, None, None]
-        x_t = time_expanded * noise + (1 - time_expanded) * actions
+        x_t = time_expanded * noise + (1 - time_expanded) * actions # [10,50,32] 采样流匹配时间步
         u_t = noise - actions
 
-        prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
+        prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix( # prefix_embs:[10,560,2048], prefix_pad_masks:[10,560]
             images, img_masks, lang_tokens, lang_masks
         )
-        suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(state, x_t, time)
+        suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(state, x_t, time) # suffix_embs:[10,51,1024], suffix_pad_masks:[10,51], 
 
-        pad_masks = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
+        pad_masks = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1) # [[10,560],[10,51]] -> [10,611]
         att_masks = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
 
         att_2d_masks = make_att_2d_masks(pad_masks, att_masks)
-        position_ids = torch.cumsum(pad_masks, dim=1) - 1
+        position_ids = torch.cumsum(pad_masks, dim=1) - 1 # position_ids[0]数值为[0,1,2,...,565,566,567], 形状为[611], 因为lang_mask中有一些false,所以max_数值 ！= 611
 
         (_, suffix_out), _ = self.paligemma_with_expert.forward(
             attention_mask=att_2d_masks,
