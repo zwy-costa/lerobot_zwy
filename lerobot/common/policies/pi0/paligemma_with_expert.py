@@ -365,23 +365,23 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
     def eager_attention_forward(
         self, attention_mask, batch_size, head_dim, query_states, key_states, value_states
     ):
-        num_att_heads = self.config.paligemma_config.text_config.num_attention_heads
-        num_key_value_heads = self.config.paligemma_config.text_config.num_key_value_heads
-        num_key_value_groups = num_att_heads // num_key_value_heads
+        num_att_heads = self.config.paligemma_config.text_config.num_attention_heads # 8
+        num_key_value_heads = self.config.paligemma_config.text_config.num_key_value_heads # 1
+        num_key_value_groups = num_att_heads // num_key_value_heads # 8 // 1 = 8
 
         # query_states: batch_size, sequence_length, num_att_head, head_dim
         # key_states: batch_size, sequence_length, num_key_value_head, head_dim
         # value_states: batch_size, sequence_length, num_key_value_head, head_dim
         sequence_length = key_states.shape[1]
 
-        key_states = key_states[:, :, :, None, :].expand(
+        key_states = key_states[:, :, :, None, :].expand( # [10,611,1,256] -> [10,611,1,8,256]
             batch_size, sequence_length, num_key_value_heads, num_key_value_groups, head_dim
         )
-        key_states = key_states.reshape(
+        key_states = key_states.reshape( # [10,611,1,8,256] -> [10,611,8,256]
             batch_size, sequence_length, num_key_value_heads * num_key_value_groups, head_dim
         )
 
-        value_states = value_states[:, :, :, None, :].expand(
+        value_states = value_states[:, :, :, None, :].expand( # 同上
             batch_size, sequence_length, num_key_value_heads, num_key_value_groups, head_dim
         )
         value_states = value_states.reshape(
@@ -396,7 +396,7 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
         query_states = query_states.transpose(1, 2)
         key_states = key_states.transpose(1, 2)
 
-        att_weights = torch.matmul(query_states, key_states.transpose(2, 3))
+        att_weights = torch.matmul(query_states, key_states.transpose(2, 3)) # [10,611,8]
         att_weights *= head_dim**-0.5
         big_neg = -2.3819763e38  # See gemma/modules.py
 
