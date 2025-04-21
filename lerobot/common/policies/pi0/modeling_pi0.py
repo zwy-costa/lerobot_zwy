@@ -103,18 +103,22 @@ def make_att_2d_masks(pad_masks, att_masks):
     setup several types of attention, for example:
 
       [[1 1 1 1 1 1]]: pure causal attention.
+      纯因果注意力：每个 token 只能关注自身及之前的 token(严格从左到右的因果掩码)
 
       [[0 0 0 1 1 1]]: prefix-lm attention. The first 3 tokens can attend between
           themselves and the last 3 tokens have a causal attention. The first
           entry could also be a 1 without changing behaviour.
+      前缀语言模型注意力 : 前3个token可以互相关注，后3个token只能关注自身及之前的token
 
       [[1 0 1 0 1 0 0 1 0 0]]: causal attention between 4 blocks. Tokens of a
           block can attend all previous blocks and all tokens on the same block.
+      分块因果注意力 : 4个块之间的因果注意力。一个块的token可以关注所有之前的块和同一块上的所有token
 
     Args:
       input_mask: bool[B, N] true if its part of the input, false if padding.
       mask_ar: int32[B, N] mask that's 1 where previous tokens cannot depend on
         it and 0 where it shares the same attention mask as the previous token.
+      1 表示当前 token 开启新的注意力范围（前序 token 不可见），0 表示当前 token 共享前序 token 的注意力范围
     """
     if att_masks.ndim != 2:
         raise ValueError(att_masks.ndim)
@@ -122,10 +126,10 @@ def make_att_2d_masks(pad_masks, att_masks):
         raise ValueError(pad_masks.ndim)
 
     cumsum = torch.cumsum(att_masks, dim=1)
-    att_2d_masks = cumsum[:, None, :] <= cumsum[:, :, None]
-    pad_2d_masks = pad_masks[:, None, :] * pad_masks[:, :, None]
+    att_2d_masks = cumsum[:, None, :] <= cumsum[:, :, None] # [10,1,611] 和 [10,611,1] 进行广播
+    pad_2d_masks = pad_masks[:, None, :] * pad_masks[:, :, None] # 同上
     att_2d_masks = att_2d_masks & pad_2d_masks
-    return att_2d_masks
+    return att_2d_masks # [10,611,611]
 
 
 def resize_with_pad(img, width, height, pad_value=-1):
@@ -599,12 +603,12 @@ class PI0FlowMatching(nn.Module):
         pad_masks.append(action_time_mask)
 
         # Set attention masks so that image, language and state inputs do not attend to action tokens
-        att_masks += [1] + ([0] * (self.config.n_action_steps - 1))
+        att_masks += [1] + ([0] * (self.config.n_action_steps - 1)) # [1,1,0,0..,0] 共有(50-1)个0
 
         embs = torch.cat(embs, dim=1)
         pad_masks = torch.cat(pad_masks, dim=1) # [[10,1],[10,50]] -> [10,51],全为true
         att_masks = torch.tensor(att_masks, dtype=embs.dtype, device=embs.device)
-        att_masks = att_masks[None, :].expand(bsize, len(att_masks))
+        att_masks = att_masks[None, :].expand(bsize, len(att_masks)) # [51] -> [1,51] -> [10,51]
 
         return embs, pad_masks, att_masks
 
@@ -625,10 +629,10 @@ class PI0FlowMatching(nn.Module):
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix( # prefix_embs:[10,560,2048], prefix_pad_masks:[10,560] 不全为true, prefix_att_masks:[10,560] 全为0 
             images, img_masks, lang_tokens, lang_masks
         )
-        suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(state, x_t, time) # suffix_embs:[10,51,1024], suffix_pad_masks:[10,51], 
+        suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(state, x_t, time) # suffix_embs:[10,51,1024], suffix_pad_masks:[10,51],全为true. suffix_att_masks:[10,51] 51中前两个为1,其余为0
 
         pad_masks = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1) # [[10,560],[10,51]] -> [10,611]
-        att_masks = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
+        att_masks = torch.cat([prefix_att_masks, suffix_att_masks], dim=1) # 同上
 
         att_2d_masks = make_att_2d_masks(pad_masks, att_masks)
         position_ids = torch.cumsum(pad_masks, dim=1) - 1 # position_ids[0]数值为[0,1,2,...,565,566,567], 形状为[611], 因为lang_mask中有一些false,所以max_数值 ！= 611

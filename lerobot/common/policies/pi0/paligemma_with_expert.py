@@ -393,10 +393,10 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
         query_states = query_states.to(dtype=torch.float32)
         key_states = key_states.to(dtype=torch.float32)
 
-        query_states = query_states.transpose(1, 2)
+        query_states = query_states.transpose(1, 2) # [10,8,611,256]
         key_states = key_states.transpose(1, 2)
 
-        att_weights = torch.matmul(query_states, key_states.transpose(2, 3)) # [10,611,8]
+        att_weights = torch.matmul(query_states, key_states.transpose(2, 3)) # [10,8,611,611]
         att_weights *= head_dim**-0.5
         big_neg = -2.3819763e38  # See gemma/modules.py
 
