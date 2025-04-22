@@ -286,13 +286,13 @@ class PI0Policy(PreTrainedPolicy):
             state = self.prepare_state(batch)
             lang_tokens, lang_masks = self.prepare_language(batch)
 
-            actions = self.model.sample_actions(
+            actions = self.model.sample_actions( # 这里出来是 [1,50,32]
                 images, img_masks, lang_tokens, lang_masks, state, noise=noise
             )
 
             # Unpad actions
             original_action_dim = self.config.action_feature.shape[0]
-            actions = actions[:, :, :original_action_dim]
+            actions = actions[:, :, :original_action_dim] # [1,50,32] -> [1,50,6]
 
             actions = self.unnormalize_outputs({"action": actions})["action"]
 
@@ -301,8 +301,10 @@ class PI0Policy(PreTrainedPolicy):
 
             # `self.model.forward` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
             # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
-            self._action_queue.extend(actions.transpose(0, 1))
+            self._action_queue.extend(actions.transpose(0, 1)) # [50,1,6]
         return self._action_queue.popleft()
+        # k = 10
+        # return torch.stack([self._action_queue.popleft() for _ in range(min(k, len(self._action_queue)))])
 
     def forward(self, batch: dict[str, Tensor], noise=None, time=None) -> tuple[Tensor, dict[str, Tensor]]:
         """Do a full training forward pass to compute the loss"""
@@ -385,7 +387,8 @@ class PI0Policy(PreTrainedPolicy):
     def prepare_language(self, batch) -> tuple[Tensor, Tensor]:
         """Tokenize the text input"""
         device = batch[OBS_ROBOT].device
-        tasks = batch["task"]
+        # tasks = batch["task"]
+        tasks = ["Grasp the colored block, Place it on the black dot, and then return the arm to the default position."]
 
         # PaliGemma prompt has to end with a new line
         tasks = [task if task.endswith("\n") else f"{task}\n" for task in tasks]
@@ -678,12 +681,12 @@ class PI0FlowMatching(nn.Module):
             fill_kv_cache=True,
         )
 
-        dt = -1.0 / self.config.num_steps
+        dt = -1.0 / self.config.num_steps # 10
         dt = torch.tensor(dt, dtype=torch.float32, device=device)
 
         x_t = noise
         time = torch.tensor(1.0, dtype=torch.float32, device=device)
-        while time >= -dt / 2:
+        while time >= -dt / 2: # 循环进行10步流匹配
             expanded_time = time.expand(bsize)
             v_t = self.denoise_step(
                 state,
