@@ -7,7 +7,8 @@ source ~/.bashrc
 # 查看磁盘占用
 du -h --max-depth=1 ./ | sort -hr
 # 解压缩命令
-zstd -dc 014000.tar.zst | tar -xvf -  
+
+zstd -dc 014000.tar.zst | tar -xvf - 
 
 # camera
 python lerobot/common/robot_devices/cameras/opencv.py \
@@ -33,13 +34,13 @@ python lerobot/scripts/visualize_dataset_html.py --repo-id ${HF_USER}/so100_321_
 
 # 训练
 python lerobot/scripts/train.py \
-  --dataset.repo_id=${HF_USER}/so100_321_pick \
-  --policy.type=diffusion \
+  --dataset.repo_id=${HF_USER}/so100_421_pick \
+  --policy.type=pi0 \
   --steps=50_000 \
   --save_freq=1_000 \
   --batch_size=10 \
-  --output_dir=outputs/so100_321_pick \
-  --job_name=so100_321_pick \
+  --output_dir=outputs/so100_421_pick \
+  --job_name=so100_421_pick \
   --policy.device=cuda \
   --wandb.enable=true
 
