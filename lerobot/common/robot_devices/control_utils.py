@@ -35,7 +35,7 @@ from lerobot.common.datasets.utils import get_features_from_robot
 from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.common.robot_devices.robots.utils import Robot
 from lerobot.common.robot_devices.utils import busy_wait
-from lerobot.common.utils.utils import get_safe_torch_device, has_method
+from lerobot.common.utils.utils import get_safe_torch_device, has_method, log_say
 
 
 def log_control_info(robot: Robot, dt_s, episode_index=None, frame_index=None, fps=None):
@@ -117,10 +117,11 @@ def predict_action(observation, policy, device, use_amp):
 
         # Compute the next action with the policy
         # based on the current observation
-        action = policy.select_action(observation)
+        action = policy.select_action(observation) # shape = [6] ？？？
 
         # Remove batch dimension
         action = action.squeeze(0)
+        # action = action.squeeze(1) # [10,1,6],这里的10是自己设置的步数
 
         # Move to cpu, if not already the case
         action = action.to("cpu")
@@ -252,7 +253,7 @@ def control_loop(
             observation = robot.capture_observation()
 
             if policy is not None:
-                pred_action = predict_action(
+                pred_action = predict_action( # shape = [6] ???
                     observation, policy, get_safe_torch_device(policy.config.device), policy.config.use_amp
                 )
                 # Action can eventually be clipped using `max_relative_target`,
@@ -275,8 +276,11 @@ def control_loop(
                 rr.log(key, rr.Image(observation[key].numpy()), static=True)
 
         if fps is not None:
-            dt_s = time.perf_counter() - start_loop_t
-            busy_wait(1 / fps - dt_s)
+            dt_s = time.perf_counter() - start_loop_t # 每次 预测 + 执行 的时间
+            time_remind = 1 / fps - dt_s
+            play_sounds_tmp = False
+            log_say(f"dt_s {dt_s};  time_remind {time_remind}", play_sounds_tmp)
+            busy_wait(1 / fps - dt_s) # 等待的时间
 
         dt_s = time.perf_counter() - start_loop_t
         log_control_info(robot, dt_s, fps=fps)
