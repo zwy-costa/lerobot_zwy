@@ -297,7 +297,7 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
                     )
 
             attention_interface = self.get_attention_interface()
-            att_output = attention_interface(
+            att_output = attention_interface( # att_output: [10,611,1*8*256] -> [10,611,2048], 从embed_prefix/suffix的[10,560,2048]/[10,51,1024]的输出变成[10,611,2048]
                 attention_mask, batch_size, head_dim, query_states, key_states, value_states
             )
             att_output = att_output.to(dtype=torch.bfloat16)
@@ -305,7 +305,7 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
             # first part of att_output is prefix (up to sequence length, [:, 0:prefix_seq_len])
             outputs_embeds = []
             start = 0
-            for i, hidden_states in enumerate(inputs_embeds):
+            for i, hidden_states in enumerate(inputs_embeds): # [10,560,2048] / [10,51,1024]
                 layer = models[i].layers[layer_idx]
 
                 if hidden_states is not None:
@@ -313,7 +313,7 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
 
                     if att_output.dtype != layer.self_attn.o_proj.weight.dtype:
                         att_output = att_output.to(layer.self_attn.o_proj.weight.dtype)
-                    out_emb = layer.self_attn.o_proj(att_output[:, start:end])
+                    out_emb = layer.self_attn.o_proj(att_output[:, start:end]) # [10,611,2048] -> [10,560,2048] / [10,611,2048] -> [10,51,2048] -> [10,51,1024]
 
                     # TODO: first dropout (by default 0.0)
 
@@ -329,7 +329,7 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
                     # second residual
                     out_emb += after_first_residual
 
-                    outputs_embeds.append(out_emb)
+                    outputs_embeds.append(out_emb) # [[10,560,2048], [10,51,1024]]
 
                     start = end
                 else:
@@ -362,7 +362,7 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
     ):
         raise NotImplementedError("FA2 is not implemented (yet)")
 
-    def eager_attention_forward(
+    def eager_attention_forward( # q [10,611,8,256], k [10,611,1,256], v [10,611,1,256]
         self, attention_mask, batch_size, head_dim, query_states, key_states, value_states
     ):
         num_att_heads = self.config.paligemma_config.text_config.num_attention_heads # 8
@@ -400,7 +400,7 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
         att_weights *= head_dim**-0.5
         big_neg = -2.3819763e38  # See gemma/modules.py
 
-        masked_att_weights = torch.where(attention_mask[:, None, :, :], att_weights, big_neg)
+        masked_att_weights = torch.where(attention_mask[:, None, :, :], att_weights, big_neg) # 如果attention_mask为False，将对应位置的权重替换为big_neg
 
         probs = nn.functional.softmax(masked_att_weights, dim=-1)
         probs = probs.to(dtype=value_states.dtype)
@@ -408,10 +408,10 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
         # probs: batch_size, num_key_value_head, num_att_head, sequence_length, sequence_length
         # value_states: batch_size, sequence_length, num_att_heads, head_dim
 
-        att_output = torch.matmul(probs, value_states.permute(0, 2, 1, 3))
+        att_output = torch.matmul(probs, value_states.permute(0, 2, 1, 3)) # [10,8,611,611] * [10,8,611,256] -> [10,8,611,256]
 
-        att_output = att_output.permute(0, 2, 1, 3)
+        att_output = att_output.permute(0, 2, 1, 3) # [10,8,611,256] -> [10,611,8,256]
         # we use -1 because sequence length can change
-        att_output = att_output.reshape(batch_size, -1, num_key_value_heads * num_key_value_groups * head_dim)
+        att_output = att_output.reshape(batch_size, -1, num_key_value_heads * num_key_value_groups * head_dim) # [10,611,8,256] -> [10,611,1*8*256] -> [10,611,2048]
 
         return att_output
