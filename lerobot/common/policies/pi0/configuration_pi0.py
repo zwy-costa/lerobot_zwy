@@ -27,6 +27,7 @@ from lerobot.configs.types import FeatureType, NormalizationMode, PolicyFeature
 class PI0Config(PreTrainedConfig):
     # Input / output structure.
     n_obs_steps: int = 1
+    # 这里可以改action大小
     chunk_size: int = 50
     n_action_steps: int = 50
 

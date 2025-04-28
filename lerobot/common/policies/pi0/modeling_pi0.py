@@ -641,7 +641,7 @@ class PI0FlowMatching(nn.Module):
         att_2d_masks = make_att_2d_masks(pad_masks, att_masks)
         position_ids = torch.cumsum(pad_masks, dim=1) - 1 # position_ids[0]数值为[0,1,2,...,565,566,567], 形状为[611], 因为lang_mask中有一些false,所以max_数值 ！= 611
 
-        (_, suffix_out), _ = self.paligemma_with_expert.forward(
+        (_, suffix_out), _ = self.paligemma_with_expert.forward( # prefix_embs和suffix_embs通过各自的transformer进行处理，并结合一起做注意力，输出又拆成两个部分。只接收suffix [10,51,1024]
             attention_mask=att_2d_masks,
             position_ids=position_ids,
             past_key_values=None,
@@ -649,10 +649,10 @@ class PI0FlowMatching(nn.Module):
             use_cache=False,
             fill_kv_cache=False,
         )
-        suffix_out = suffix_out[:, -self.config.n_action_steps :]
+        suffix_out = suffix_out[:, -self.config.n_action_steps :] # [10,51,1024] -> [10,50,1024]
         # Original openpi code, upcast attention output
         suffix_out = suffix_out.to(dtype=torch.float32)
-        v_t = self.action_out_proj(suffix_out)
+        v_t = self.action_out_proj(suffix_out) # [10,50,1024] -> [10,50,32]
 
         losses = F.mse_loss(u_t, v_t, reduction="none")
         return losses

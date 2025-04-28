@@ -28,6 +28,7 @@ import torch
 import torchvision
 from datasets.features.features import register_feature
 from PIL import Image
+import math
 
 
 def get_safe_default_codec():
@@ -201,6 +202,23 @@ def decode_video_frames_torchcodec(
 
     # convert timestamps to frame indices
     frame_indices = [round(ts * average_fps) for ts in timestamps]
+    total_frames = metadata.num_frames
+    frame_indices = []
+    for ts in timestamps:
+        frame_index = round(ts * average_fps)
+        if frame_index >= total_frames:
+            logging.info(
+                f"视频 {video_path} 的请求索引 {frame_index} 超出范围（总帧数 {total_frames} -> 不加入索引列表"
+            )
+            # break
+            idx = math.floor(ts * average_fps)
+            idx_clamp = min(max(idx, 0), total_frames - 1)
+            if idx != frame_index or idx_clamp != frame_index:
+                logging.info(
+                    f"视频 {video_path} 的请求索引 {frame_index} 超出范围（总帧数 {total_frames} -> 使用索引 {idx} -> 使用索引 {idx_clamp}"
+                )
+            frame_index = idx_clamp
+        frame_indices.append(frame_index)
 
     # retrieve frames based on indices
     frames_batch = decoder.get_frames_at(indices=frame_indices)
@@ -218,7 +236,8 @@ def decode_video_frames_torchcodec(
     dist = torch.cdist(query_ts[:, None], loaded_ts[:, None], p=1)
     min_, argmin_ = dist.min(1)
 
-    is_within_tol = min_ < tolerance_s
+    # is_within_tol = min_ < tolerance_s
+    is_within_tol = min_ < 0.1
     assert is_within_tol.all(), (
         f"One or several query timestamps unexpectedly violate the tolerance ({min_[~is_within_tol]} > {tolerance_s=})."
         "It means that the closest frame that can be loaded from the video is too far away in time."

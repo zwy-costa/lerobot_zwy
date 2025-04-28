@@ -39,13 +39,13 @@ python lerobot/scripts/visualize_dataset_html.py --repo-id ${HF_USER}/so100_321_
 
 # 训练
 python lerobot/scripts/train.py \
-  --dataset.repo_id=${HF_USER}/so100_321_pick \
-  --policy.type=pi0 \
+  --dataset.repo_id=${HF_USER}/so100_421_pick \
+  --policy.type=diffusion \
   --steps=50_000 \
   --save_freq=1_000 \
   --batch_size=10 \
-  --output_dir=outputs/so100_321_pick \
-  --job_name=so100_321_pick \
+  --output_dir=outputs/so100_421_pick \
+  --job_name=so100_421_pick \
   --policy.device=cuda \
   --wandb.enable=true
 
