@@ -292,7 +292,8 @@ class PI0Policy(PreTrainedPolicy):
 
             # Unpad actions
             original_action_dim = self.config.action_feature.shape[0]
-            actions = actions[:, :, :original_action_dim] # [1,50,32] -> [1,50,6]
+            k = 18
+            actions = actions[:, :k, :original_action_dim] # [1,50,32] -> [1,50,6]
 
             actions = self.unnormalize_outputs({"action": actions})["action"]
 
