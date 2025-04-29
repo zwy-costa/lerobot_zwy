@@ -217,8 +217,9 @@ class ACTTemporalEnsembler:
         ```
         """
         self.chunk_size = chunk_size
-        self.ensemble_weights = torch.exp(-temporal_ensemble_coeff * torch.arange(chunk_size))
-        self.ensemble_weights_cumsum = torch.cumsum(self.ensemble_weights, dim=0)
+        # temporal_ensemble_coeff 越大则近期动作权重越高
+        self.ensemble_weights = torch.exp(-temporal_ensemble_coeff * torch.arange(chunk_size)) # 生成指数衰减的权重
+        self.ensemble_weights_cumsum = torch.cumsum(self.ensemble_weights, dim=0) # 计算权重的累计和(用于后续归一化？),生成形如 [w₀, w₀+w₁, ..., ∑wᵢ] 的张量
         self.reset()
 
     def reset(self):
@@ -227,6 +228,7 @@ class ACTTemporalEnsembler:
         # (chunk_size,) count of how many actions are in the ensemble for each time step in the sequence.
         self.ensembled_actions_count = None
 
+    #  ======= 以下注释皆假设 chunk_size =100 =========
     def update(self, actions: Tensor) -> Tensor:
         """
         Takes a (batch, chunk_size, action_dim) sequence of actions, update the temporal ensemble for all
@@ -234,7 +236,7 @@ class ACTTemporalEnsembler:
         """
         self.ensemble_weights = self.ensemble_weights.to(device=actions.device)
         self.ensemble_weights_cumsum = self.ensemble_weights_cumsum.to(device=actions.device)
-        if self.ensembled_actions is None:
+        if self.ensembled_actions is None: # 第一次是进这个if
             # Initializes `self._ensembled_action` to the sequence of actions predicted during the first
             # time step of the episode.
             self.ensembled_actions = actions.clone()
@@ -246,8 +248,8 @@ class ACTTemporalEnsembler:
         else:
             # self.ensembled_actions will have shape (batch_size, chunk_size - 1, action_dim). Compute
             # the online update for those entries.
-            self.ensembled_actions *= self.ensemble_weights_cumsum[self.ensembled_actions_count - 1]
-            self.ensembled_actions += actions[:, :-1] * self.ensemble_weights[self.ensembled_actions_count]
+            self.ensembled_actions *= self.ensemble_weights_cumsum[self.ensembled_actions_count - 1] # 上一次处理过的值[1,99,15]，不知道为什么要乘以累计的权重
+            self.ensembled_actions += actions[:, :-1] * self.ensemble_weights[self.ensembled_actions_count] # [1,100,15]提取前面的[1,99,15],再加上前一次处理的 self.ensembled_actions
             self.ensembled_actions /= self.ensemble_weights_cumsum[self.ensembled_actions_count]
             self.ensembled_actions_count = torch.clamp(self.ensembled_actions_count + 1, max=self.chunk_size)
             # The last action, which has no prior online average, needs to get concatenated onto the end.
@@ -256,10 +258,12 @@ class ACTTemporalEnsembler:
                 [self.ensembled_actions_count, torch.ones_like(self.ensembled_actions_count[-1:])]
             )
         # "Consume" the first action.
+        # 进第一个if, self.ensembled_actions=[1,100,15]
+        # 输出action=[1,15] self.ensembled_actions=[1,99,15], self.ensembled_actions_count=[99,1]
         action, self.ensembled_actions, self.ensembled_actions_count = (
-            self.ensembled_actions[:, 0],
-            self.ensembled_actions[:, 1:],
-            self.ensembled_actions_count[1:],
+            self.ensembled_actions[:, 0], # 提第一个维度输出，[1,100,15] -> [1,15]
+            self.ensembled_actions[:, 1:], # 因为第0个被输出，所以将所有动作向前移动一位, [1,100,15] -> [1,99,15]
+            self.ensembled_actions_count[1:], # 
         )
         return action
 
