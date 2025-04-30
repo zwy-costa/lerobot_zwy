@@ -427,8 +427,8 @@ class ACT(nn.Module):
             )  # (B, 1, D)
             if self.config.robot_state_feature:
                 robot_state_embed = self.vae_encoder_robot_state_input_proj(batch["observation.state"])
-                robot_state_embed = robot_state_embed.unsqueeze(1)  # (B, 1, D)
-            action_embed = self.vae_encoder_action_input_proj(batch["action"])  # (B, S, D)
+                robot_state_embed = robot_state_embed.unsqueeze(1)  # (B,D) -> (B, 1, D)
+            action_embed = self.vae_encoder_action_input_proj(batch["action"])  # (B,step,action_D) -> (B,step,D)
 
             if self.config.robot_state_feature:
                 vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
