@@ -457,13 +457,16 @@ class ACT(nn.Module):
                 vae_encoder_input.permute(1, 0, 2),
                 pos_embed=pos_embed.permute(1, 0, 2),
                 key_padding_mask=key_padding_mask,
-            )[0]  # select the class token, with shape (B, D)
-            latent_pdf_params = self.vae_encoder_latent_output_proj(cls_token_out)
-            mu = latent_pdf_params[:, : self.config.latent_dim]
+            )[0]  # select the class token, with shape (2+S,B,D) -> (B,D)
+            latent_pdf_params = self.vae_encoder_latent_output_proj(cls_token_out) # (B,D) -> (B,2*L),实际为(8,512) -> (8,2*32)
+            mu = latent_pdf_params[:, : self.config.latent_dim] # 前 L 维是潜在空间的均值
             # This is 2log(sigma). Done this way to match the original implementation.
-            log_sigma_x2 = latent_pdf_params[:, self.config.latent_dim :]
+            log_sigma_x2 = latent_pdf_params[:, self.config.latent_dim :] # 后 L 维是潜在空间 两倍的对数标准差，即 对数方差 log(σ²)
 
-            # Sample the latent with the reparameterization trick.
+            # Sample the latent with the reparameterization trick.  重参数化采样，mu+σ*noise 等价于从 N(mu,σ²) 中采样
+            # div(2) 除以2, exp() 取指数, 得到标准差 sigma
+            # torch.randn_like(mu): 生成与mu形状相同的标准正态分布噪声 noise ~ N(0,1)
+            # 这里的 latent_sample 是从均值 mu 和对数方差 log_sigma_x2 中采样的潜在变量
             latent_sample = mu + log_sigma_x2.div(2).exp() * torch.randn_like(mu)
         else:
             # When not using the VAE encoder, we set the latent to be all zeros.
@@ -575,7 +578,8 @@ class ACTEncoderLayer(nn.Module):
         if self.pre_norm:
             x = self.norm1(x)
         q = k = x if pos_embed is None else x + pos_embed
-        x = self.self_attn(q, k, value=x, key_padding_mask=key_padding_mask)
+        # key_padding_mask，当att_msk用: q k矩阵相乘后再加(函数内部F,T转化乘0,-inf值)
+        x = self.self_attn(q, k, value=x, key_padding_mask=key_padding_mask) # 输出 attn_output, attn_output_weights [[102,8,512], [8,102,102]]
         x = x[0]  # note: [0] to select just the output, not the attention weights
         x = skip + self.dropout1(x)
         if self.pre_norm:
