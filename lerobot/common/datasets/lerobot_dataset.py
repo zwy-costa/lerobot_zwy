@@ -75,13 +75,14 @@ from lerobot.common.datasets.video_utils import (
 from lerobot.common.robot_devices.robots.utils import Robot
 
 import os
-
 # os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
 # os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
 
-# 需要设置这个环境变量才能下载数据集
-# export HF_ENDPOINT=https://hf-mirror.com
+# 1. 需要设置这个环境变量才能下载数据集
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+# 2. 或者使用autodl提供内置服务
+# source /etc/network_turbo
 
 CODEBASE_VERSION = "v2.1"
 
