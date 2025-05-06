@@ -93,6 +93,7 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
             episodes=cfg.dataset.episodes,
             delta_timestamps=delta_timestamps,
             image_transforms=image_transforms,
+            # 出现v2.1问题，就把下面这行注释了
             revision=cfg.dataset.revision,
             video_backend=cfg.dataset.video_backend,
         )
