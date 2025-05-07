@@ -443,12 +443,12 @@ class ACT(nn.Module):
             # Prepare key padding mask for the transformer encoder. We have 1 or 2 extra tokens at the start of the
             # sequence depending whether we use the input states or not (cls and robot state)
             # False means not a padding token.
-            cls_joint_is_pad = torch.full(
+            cls_joint_is_pad = torch.full( # (B, 2)大小, 值为False
                 (batch_size, 2 if self.config.robot_state_feature else 1),
                 False,
                 device=batch["observation.state"].device,
             )
-            key_padding_mask = torch.cat(
+            key_padding_mask = torch.cat( # [(B,2), (B,100)] -> (B,102)
                 [cls_joint_is_pad, batch["action_is_pad"]], axis=1
             )  # (bs, seq+1 or 2)
 
