@@ -74,6 +74,16 @@ from lerobot.common.datasets.video_utils import (
 )
 from lerobot.common.robot_devices.robots.utils import Robot
 
+import os
+# os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
+# os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
+
+# 1. 需要设置这个环境变量才能下载数据集
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+# 2. 或者使用autodl提供内置服务
+# source /etc/network_turbo
+
 CODEBASE_VERSION = "v2.1"
 
 
@@ -121,6 +131,7 @@ class LeRobotDatasetMetadata:
         snapshot_download(
             self.repo_id,
             repo_type="dataset",
+            # 出现v2.1问题，就把下面这行注释了
             revision=self.revision,
             local_dir=self.root,
             allow_patterns=allow_patterns,
@@ -498,6 +509,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             assert all((self.root / fpath).is_file() for fpath in self.get_episodes_file_paths())
             self.hf_dataset = self.load_hf_dataset()
         except (AssertionError, FileNotFoundError, NotADirectoryError):
+            # 出现v2.1问题，就把下面这行注释了
             self.revision = get_safe_version(self.repo_id, self.revision)
             self.download_episodes(download_videos)
             self.hf_dataset = self.load_hf_dataset()
@@ -579,6 +591,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         snapshot_download(
             self.repo_id,
             repo_type="dataset",
+            # 出现v2.1问题，就把下面这行注释了
             revision=self.revision,
             local_dir=self.root,
             allow_patterns=allow_patterns,

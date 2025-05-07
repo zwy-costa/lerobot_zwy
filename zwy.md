@@ -15,15 +15,21 @@ zstd -dc 014000.tar.zst | tar -xvf -
 # tele示教 因为configs.py里面改了port名，所以需要运行下面.sh进行端口映射
 bash run_create_udev_rule.sh
 
+
+# 登录hugging face，如果登录不上，则使用hf_mirror：https://hf-mirror.com/
+export HF_ENDPOINT=https://hf-mirror.com
+
 # camera
 python lerobot/common/robot_devices/cameras/opencv.py \
     --images-dir outputs/images_from_opencv_camera
+
 
 # 遥操作
 python lerobot/scripts/control_robot.py \
     --robot.type=fcbox \
     --control.type=teleoperate \
     --control.fps=30
+
 
 # 数据采集
 python lerobot/scripts/control_robot.py \
@@ -45,13 +51,10 @@ python lerobot/scripts/visualize_dataset_html.py --repo-id ${HF_USER}/so100_321_
 
 # 训练
 python lerobot/scripts/train.py \
-  --dataset.repo_id=${HF_USER}/so100_421_pick \
-  --policy.type=diffusion \
-  --steps=50_000 \
-  --save_freq=1_000 \
-  --batch_size=10 \
-  --output_dir=outputs/so100_421_pick \
-  --job_name=so100_421_pick \
+  --dataset.repo_id=weiye11/fcbox_04291050_19 \
+  --policy.type=act \
+  --output_dir=/root/autodl-tmp/lerobot_zwy/lerobot_zwy/outputs/train/lekiwi_0430_coeT_step100 \
+  --job_name=lekiwi_0430_coeT_step100 \
   --policy.device=cuda \
   --wandb.enable=true
 
