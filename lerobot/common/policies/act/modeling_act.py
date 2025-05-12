@@ -496,18 +496,18 @@ class ACT(nn.Module):
 
             # For a list of images, the H and W may vary but H*W is constant.
             for img in batch["observation.images"]: # img: [8,3,480,640], C=3与相机数有关
-                cam_features = self.backbone(img)["feature_map"] # [8,512,15,20]
-                cam_pos_embed = self.encoder_cam_feat_pos_embed(cam_features).to(dtype=cam_features.dtype) # 根据 cam_features 形状生成 pos_embed
-                cam_features = self.encoder_img_feat_input_proj(cam_features)
+                cam_features = self.backbone(img)["feature_map"] # 过resnet18, 输出为[8,512,15,20]
+                cam_pos_embed = self.encoder_cam_feat_pos_embed(cam_features).to(dtype=cam_features.dtype) # 根据 cam_features形状 和 维度D 生成 pos_embed，(1,D,H,W)
+                cam_features = self.encoder_img_feat_input_proj(cam_features) # Conv2d(512, 512, kernel_size=(1, 1), stride=(1, 1))，没变
 
                 # Rearrange features to (sequence, batch, dim).
-                cam_features = einops.rearrange(cam_features, "b c h w -> (h w) b c")
+                cam_features = einops.rearrange(cam_features, "b c h w -> (h w) b c") # [8,512,15,20] -> [300,8,512]
                 cam_pos_embed = einops.rearrange(cam_pos_embed, "b c h w -> (h w) b c")
 
                 all_cam_features.append(cam_features)
                 all_cam_pos_embeds.append(cam_pos_embed)
 
-            encoder_in_tokens.extend(torch.cat(all_cam_features, axis=0)) # [[B,D], [B,D], [B,C], ... , [B,C]], 其中[B,C]有3*(h*W)个，假设有3个camera
+            encoder_in_tokens.extend(torch.cat(all_cam_features, axis=0)) # [[B,D], [B,D], [B,C], ... , [B,C]], 其中[B,C]有3*(h*W)个，假设有3个camera, C = D
             encoder_in_pos_embed.extend(torch.cat(all_cam_pos_embeds, axis=0))
 
         # Stack all tokens along the sequence dimension.
@@ -746,21 +746,21 @@ class ACTSinusoidalPositionEmbedding2d(nn.Module):
         # "Normalize" the position index such that it ranges in [0, 2π].
         # Note: Adding epsilon on the denominator should not be needed as all values of y_embed and x_range
         # are non-zero by construction. This is an artifact of the original code.
-        y_range = y_range / (y_range[:, -1:, :] + self._eps) * self._two_pi
-        x_range = x_range / (x_range[:, :, -1:] + self._eps) * self._two_pi
+        y_range = y_range / (y_range[:, -1:, :] + self._eps) * self._two_pi # y_range[:, -1:, :] 是最后一行，即[H,...,H], W个H
+        x_range = x_range / (x_range[:, :, -1:] + self._eps) * self._two_pi # x_range[:, :, -1:] 是最后一列，即[W,...,W], H个W
 
         inverse_frequency = self._temperature ** (
             2 * (torch.arange(self.dimension, dtype=torch.float32, device=x.device) // 2) / self.dimension
         )
 
-        x_range = x_range.unsqueeze(-1) / inverse_frequency  # (1, H, W, 1) -> (1,H,W,C//2),实际 C//2=256,C为Encoder中的D
+        x_range = x_range.unsqueeze(-1) / inverse_frequency  # (1, H, W, 1) / (C) = (1,H,W,C),实际 C=D//2=256,D为Encoder中的D
         y_range = y_range.unsqueeze(-1) / inverse_frequency  # (1, H, W, 1)
 
         # Note: this stack then flatten operation results in interleaved sine and cosine terms.
-        # pos_embed_x and pos_embed_y are (1, H, W, C // 2).
-        pos_embed_x = torch.stack((x_range[..., 0::2].sin(), x_range[..., 1::2].cos()), dim=-1).flatten(3)
+        # pos_embed_x and pos_embed_y are (1, H, W, D // 2).
+        pos_embed_x = torch.stack((x_range[..., 0::2].sin(), x_range[..., 1::2].cos()), dim=-1).flatten(3) # (1,H,W,D//4,2).flatten(3) -> (1,H,W,D//2)
         pos_embed_y = torch.stack((y_range[..., 0::2].sin(), y_range[..., 1::2].cos()), dim=-1).flatten(3)
-        pos_embed = torch.cat((pos_embed_y, pos_embed_x), dim=3).permute(0, 3, 1, 2)  # (1,H,W,C) -> (1, C, H, W)
+        pos_embed = torch.cat((pos_embed_y, pos_embed_x), dim=3).permute(0, 3, 1, 2)  # (1,H,W,D) -> (1, D, H, W)
 
         return pos_embed
 
