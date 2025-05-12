@@ -492,7 +492,7 @@ Once you're familiar with teleoperation, you can record your first dataset with 
 To start the program on LeKiwi, SSH into your Raspberry Pi, and run `conda activate lerobot` and this script:
 ```bash
 python lerobot/scripts/control_robot.py \
-  --robot.type=lekiwi \
+  --robot.type=fcbox \
   --control.type=remote_robot
 ```
 
@@ -509,17 +509,17 @@ echo $HF_USER
 On your laptop then run this command to record 2 episodes and upload your dataset to the hub:
 ```bash
 python lerobot/scripts/control_robot.py \
-  --robot.type=lekiwi \
+  --robot.type=fcbox \
   --control.type=record \
   --control.fps=30 \
-  --control.single_task="Grasp a lego block and put it in the bin." \
-  --control.repo_id=${HF_USER}/lekiwi_test \
-  --control.tags='["tutorial"]' \
+  --control.single_task="move to grash the block." \
+  --control.repo_id=./lekiwi_04301449 \
+  --control.tags='["lekiwi"]' \
   --control.warmup_time_s=5 \
-  --control.episode_time_s=30 \
-  --control.reset_time_s=30 \
-  --control.num_episodes=2 \
-  --control.push_to_hub=true
+  --control.episode_time_s=120 \
+  --control.reset_time_s=10 \
+  --control.num_episodes=20 \
+  --control.push_to_hub=false
 ```
 
 Note: You can resume recording by adding `--control.resume=true`.

@@ -336,7 +336,7 @@ class ACT(nn.Module):
 
         # Backbone for image feature extraction.
         if self.config.image_features:
-            backbone_model = getattr(torchvision.models, config.vision_backbone)(
+            backbone_model = getattr(torchvision.models, config.vision_backbone)( # backbone_model = resnet18
                 replace_stride_with_dilation=[False, False, config.replace_final_stride_with_dilation],
                 weights=config.pretrained_backbone_weights,
                 norm_layer=FrozenBatchNorm2d,
@@ -344,6 +344,7 @@ class ACT(nn.Module):
             # Note: The assumption here is that we are using a ResNet model (and hence layer4 is the final
             # feature map).
             # Note: The forward method of this returns a dict: {"feature_map": output}.
+            # 创建了一个特征提取器，只返回指定层("layer4")的输出，且输出格式为{"feature_map":output}
             self.backbone = IntermediateLayerGetter(backbone_model, return_layers={"layer4": "feature_map"})
 
         # Transformer (acts as VAE decoder when training with the variational objective).
@@ -425,10 +426,10 @@ class ACT(nn.Module):
             cls_embed = einops.repeat(
                 self.vae_encoder_cls_embed.weight, "1 d -> b 1 d", b=batch_size
             )  # (B, 1, D)
-            if self.config.robot_state_feature:
-                robot_state_embed = self.vae_encoder_robot_state_input_proj(batch["observation.state"])
-                robot_state_embed = robot_state_embed.unsqueeze(1)  # (B, 1, D)
-            action_embed = self.vae_encoder_action_input_proj(batch["action"])  # (B, S, D)
+            if self.config.robot_state_feature: # state_D = action_D, 动作的维度
+                robot_state_embed = self.vae_encoder_robot_state_input_proj(batch["observation.state"]) # (B,state_D) -> (B,D)
+                robot_state_embed = robot_state_embed.unsqueeze(1)  # (B,D) -> (B, 1, D)
+            action_embed = self.vae_encoder_action_input_proj(batch["action"])  # (B,step,action_D) -> (B,step,D)
 
             if self.config.robot_state_feature:
                 vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
@@ -443,12 +444,12 @@ class ACT(nn.Module):
             # Prepare key padding mask for the transformer encoder. We have 1 or 2 extra tokens at the start of the
             # sequence depending whether we use the input states or not (cls and robot state)
             # False means not a padding token.
-            cls_joint_is_pad = torch.full(
+            cls_joint_is_pad = torch.full( # (B,2)大小, 值为False
                 (batch_size, 2 if self.config.robot_state_feature else 1),
                 False,
                 device=batch["observation.state"].device,
             )
-            key_padding_mask = torch.cat(
+            key_padding_mask = torch.cat( # [(B,2), (B,S)] -> (B,2+S)
                 [cls_joint_is_pad, batch["action_is_pad"]], axis=1
             )  # (bs, seq+1 or 2)
 
@@ -463,8 +464,8 @@ class ACT(nn.Module):
             # This is 2log(sigma). Done this way to match the original implementation.
             log_sigma_x2 = latent_pdf_params[:, self.config.latent_dim :] # 后 L 维是潜在空间 两倍的对数标准差，即 对数方差 log(σ²)
 
-            # Sample the latent with the reparameterization trick.  重参数化采样，mu+σ*noise 等价于从 N(mu,σ²) 中采样
-            # div(2) 除以2, exp() 取指数, 得到标准差 sigma
+            # Sample the latent with the reparameterization trick.  重参数化采样，mu+σ*noise,其中noise~N(0,1) 等价于从 N(mu,σ²) 中采样
+            # div(2) 除以2, exp() 取指数, 得到标准差 sigma/σ
             # torch.randn_like(mu): 生成与mu形状相同的标准正态分布噪声 noise ~ N(0,1)
             # 这里的 latent_sample 是从均值 mu 和对数方差 log_sigma_x2 中采样的潜在变量
             latent_sample = mu + log_sigma_x2.div(2).exp() * torch.randn_like(mu)
@@ -477,11 +478,11 @@ class ACT(nn.Module):
             )
 
         # Prepare transformer encoder inputs.
-        encoder_in_tokens = [self.encoder_latent_input_proj(latent_sample)]
-        encoder_in_pos_embed = list(self.encoder_1d_feature_pos_embed.weight.unsqueeze(1))
+        encoder_in_tokens = [self.encoder_latent_input_proj(latent_sample)] # [B,L] -> [B,D]
+        encoder_in_pos_embed = list(self.encoder_1d_feature_pos_embed.weight.unsqueeze(1)) # [2,512] -> [2,1,512]
         # Robot state token.
         if self.config.robot_state_feature:
-            encoder_in_tokens.append(self.encoder_robot_state_input_proj(batch["observation.state"]))
+            encoder_in_tokens.append(self.encoder_robot_state_input_proj(batch["observation.state"])) # [[B,D], [B,D]]
         # Environment state token.
         if self.config.env_state_feature:
             encoder_in_tokens.append(
@@ -494,9 +495,9 @@ class ACT(nn.Module):
             all_cam_pos_embeds = []
 
             # For a list of images, the H and W may vary but H*W is constant.
-            for img in batch["observation.images"]:
-                cam_features = self.backbone(img)["feature_map"]
-                cam_pos_embed = self.encoder_cam_feat_pos_embed(cam_features).to(dtype=cam_features.dtype)
+            for img in batch["observation.images"]: # img: [8,3,480,640], C=3与相机数有关
+                cam_features = self.backbone(img)["feature_map"] # [8,512,15,20]
+                cam_pos_embed = self.encoder_cam_feat_pos_embed(cam_features).to(dtype=cam_features.dtype) # 根据 cam_features 形状生成 pos_embed
                 cam_features = self.encoder_img_feat_input_proj(cam_features)
 
                 # Rearrange features to (sequence, batch, dim).
@@ -506,7 +507,7 @@ class ACT(nn.Module):
                 all_cam_features.append(cam_features)
                 all_cam_pos_embeds.append(cam_pos_embed)
 
-            encoder_in_tokens.extend(torch.cat(all_cam_features, axis=0))
+            encoder_in_tokens.extend(torch.cat(all_cam_features, axis=0)) # [[B,D], [B,D], [B,C], ... , [B,C]], 其中[B,C]有3*(h*W)个，假设有3个camera
             encoder_in_pos_embed.extend(torch.cat(all_cam_pos_embeds, axis=0))
 
         # Stack all tokens along the sequence dimension.
@@ -579,6 +580,8 @@ class ACTEncoderLayer(nn.Module):
             x = self.norm1(x)
         q = k = x if pos_embed is None else x + pos_embed
         # key_padding_mask，当att_msk用: q k矩阵相乘后再加(函数内部F,T转化乘0,-inf值)
+        # q k v 大小为[102,8,512], multihead_attn(heads=8)时转换成[102,8*8,512/8].transpose(0,1),即[64,102,64] -T(0,1)->  [102,64,64] -> [102*8,64*8] -> [102,8,512]
+        # attn_output_weights [64,102,102] -> [8,8,102,102] 第二项为heads -mean(dim=1)-> [8,102,102] 
         x = self.self_attn(q, k, value=x, key_padding_mask=key_padding_mask) # 输出 attn_output, attn_output_weights [[102,8,512], [8,102,102]]
         x = x[0]  # note: [0] to select just the output, not the attention weights
         x = skip + self.dropout1(x)
@@ -750,14 +753,14 @@ class ACTSinusoidalPositionEmbedding2d(nn.Module):
             2 * (torch.arange(self.dimension, dtype=torch.float32, device=x.device) // 2) / self.dimension
         )
 
-        x_range = x_range.unsqueeze(-1) / inverse_frequency  # (1, H, W, 1)
+        x_range = x_range.unsqueeze(-1) / inverse_frequency  # (1, H, W, 1) -> (1,H,W,C//2),实际 C//2=256,C为Encoder中的D
         y_range = y_range.unsqueeze(-1) / inverse_frequency  # (1, H, W, 1)
 
         # Note: this stack then flatten operation results in interleaved sine and cosine terms.
         # pos_embed_x and pos_embed_y are (1, H, W, C // 2).
         pos_embed_x = torch.stack((x_range[..., 0::2].sin(), x_range[..., 1::2].cos()), dim=-1).flatten(3)
         pos_embed_y = torch.stack((y_range[..., 0::2].sin(), y_range[..., 1::2].cos()), dim=-1).flatten(3)
-        pos_embed = torch.cat((pos_embed_y, pos_embed_x), dim=3).permute(0, 3, 1, 2)  # (1, C, H, W)
+        pos_embed = torch.cat((pos_embed_y, pos_embed_x), dim=3).permute(0, 3, 1, 2)  # (1,H,W,C) -> (1, C, H, W)
 
         return pos_embed
 
