@@ -9,7 +9,7 @@ root = HF_LEROBOT_HOME / "weiye11"
 root.mkdir(parents=True, exist_ok=True)
 
 snapshot_download(
-            "weiye11/fcbox_04291050_19",
+            "weiye11/act_0523_1020",
             # "weiye11/so100_423_pick",
             repo_type="dataset",
             # revision="v2.1",

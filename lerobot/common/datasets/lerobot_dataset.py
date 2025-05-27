@@ -75,11 +75,11 @@ from lerobot.common.datasets.video_utils import (
 from lerobot.common.robot_devices.robots.utils import Robot
 
 import os
-# os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
-# os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
+os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
+os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
 
 # 1. 需要设置这个环境变量才能下载数据集
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+# os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 # 2. 或者使用autodl提供内置服务
 # source /etc/network_turbo
@@ -105,7 +105,8 @@ class LeRobotDatasetMetadata:
             self.load_metadata()
         except (FileNotFoundError, NotADirectoryError):
             if is_valid_version(self.revision):
-                self.revision = get_safe_version(self.repo_id, self.revision)
+                # self.revision = get_safe_version(self.repo_id, self.revision)
+                self.revision = CODEBASE_VERSION
 
             (self.root / "meta").mkdir(exist_ok=True, parents=True)
             self.pull_from_repo(allow_patterns="meta/")
@@ -132,7 +133,7 @@ class LeRobotDatasetMetadata:
             self.repo_id,
             repo_type="dataset",
             # 出现v2.1问题，就把下面这行注释了
-            revision=self.revision,
+            # revision=self.revision,
             local_dir=self.root,
             allow_patterns=allow_patterns,
             ignore_patterns=ignore_patterns,
@@ -510,7 +511,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             self.hf_dataset = self.load_hf_dataset()
         except (AssertionError, FileNotFoundError, NotADirectoryError):
             # 出现v2.1问题，就把下面这行注释了
-            self.revision = get_safe_version(self.repo_id, self.revision)
+            # self.revision = get_safe_version(self.repo_id, self.revision)
             self.download_episodes(download_videos)
             self.hf_dataset = self.load_hf_dataset()
 
@@ -592,7 +593,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             self.repo_id,
             repo_type="dataset",
             # 出现v2.1问题，就把下面这行注释了
-            revision=self.revision,
+            # revision=self.revision,
             local_dir=self.root,
             allow_patterns=allow_patterns,
             ignore_patterns=ignore_patterns,
