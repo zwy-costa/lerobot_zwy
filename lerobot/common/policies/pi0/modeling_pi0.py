@@ -595,7 +595,7 @@ class PI0FlowMatching(nn.Module):
         action_time_emb = torch.cat([action_emb, time_emb], dim=2) # [10,50,2048]
 
         action_time_emb = self.action_time_mlp_in(action_time_emb) # [10,50,2048] -> [10,50,1024]
-        action_time_emb = F.silu(action_time_emb)  # swish == silu
+        action_time_emb = F.silu(action_time_emb)  # beta=1时,swish==silu激活函数. swish(x)=x*sigmoid(beta*x), silu(x)=x*sigmoid(x)
         action_time_emb = self.action_time_mlp_out(action_time_emb)
 
         # Add to input tokens
