@@ -292,7 +292,8 @@ class PI0Policy(PreTrainedPolicy):
 
             # Unpad actions
             original_action_dim = self.config.action_feature.shape[0]
-            actions = actions[:, :, :original_action_dim] # [1,50,32] -> [1,50,6]
+            k = 18
+            actions = actions[:, :k, :original_action_dim] # [1,50,32] -> [1,50,6]
 
             actions = self.unnormalize_outputs({"action": actions})["action"]
 
@@ -363,7 +364,7 @@ class PI0Policy(PreTrainedPolicy):
             if self.config.resize_imgs_with_padding is not None:
                 img = resize_with_pad(img, *self.config.resize_imgs_with_padding, pad_value=0)
 
-            # Normalize from range [0,1] to [-1,1] as expacted by siglip
+            # Normalize from range [0,1] to [-1,1] as expected by siglip
             img = img * 2.0 - 1.0
 
             bsize = img.shape[0]

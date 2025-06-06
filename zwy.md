@@ -1,3 +1,5 @@
+# 局域网文件传输
+python -m http.server
 
 # 要将proxy写进 bashrc，才可以在ssh上login huggingface
 echo 'export https_proxy=http://127.0.0.1:7890' >> ~/.bashrc
@@ -33,6 +35,8 @@ python lerobot/scripts/control_robot.py \
   --control.num_episodes=60 \
   --control.push_to_hub=true \
   --control.resume=true
+# 上传数据
+huggingface-cli upload ${hf_user}/${repo_name} path/to/pretrained_model --repo.type=dataset
 
 # 可视化数据
 python lerobot/scripts/visualize_dataset_html.py --repo-id ${HF_USER}/so100_321_pick --port 9091
@@ -48,6 +52,8 @@ python lerobot/scripts/train.py \
   --job_name=so100_421_pick \
   --policy.device=cuda \
   --wandb.enable=true
+# 重新训练，需要在pretrained目录下新建亩路，把文件拷贝到路径下
+
 
 # 部署
 python lerobot/scripts/control_robot.py \
