@@ -265,8 +265,8 @@ def control_loop(
                     observation, policy, get_safe_torch_device(policy.config.device), policy.config.use_amp
                 )
                 
-                # pred_action = pred_action * (180 / np.pi)
-                # pred_action = (pred_action + 180) / 360 * 540 - 270
+                pred_action = pred_action * (180 / np.pi)
+                pred_action = (pred_action + 180) / 360 * 540 - 270
 
                 # Action can eventually be clipped using `max_relative_target`,
                 # so action actually sent is saved in the dataset.

@@ -415,7 +415,7 @@ class FeetechMotorsBus:
             values = self.apply_calibration(values, motor_names)
         return values
 
-    def apply_calibration(self, values: np.ndarray | list, motor_names: list[str] | None):
+    def apply_calibration(self, values: np.ndarray | list, motor_names: list[str] | None): # 将原始电机位置值转换为标准化的角度或线性位置值
         """Convert from unsigned int32 joint position range [0, 2**32[ to the universal float32 nominal degree range ]-180.0, 180.0[ with
         a "zero position" at 0 degree.
 
@@ -427,7 +427,7 @@ class FeetechMotorsBus:
         at any position in their original range, let's say the position 56734, they complete a full rotation clockwise by moving to 60830,
         or anticlockwise by moving to 52638. The position in the original range is arbitrary and might change a lot between each motor.
         To harmonize between motors of the same model, different robots, or even models of different brands, we propose to work
-        in the centered nominal degree range ]-180, 180[.
+        in the centered nominal degree range ]-180, 180[.        self.calibration在set_calibration函数中调用,manipulator的connect函数中设置
         """
         if motor_names is None:
             motor_names = self.motor_names
@@ -459,7 +459,7 @@ class FeetechMotorsBus:
                 # universal float32 centered degree range ]-180, 180[
                 values[i] = values[i] / (resolution // 2) * HALF_TURN_DEGREE
 
-                if (values[i] < LOWER_BOUND_DEGREE) or (values[i] > UPPER_BOUND_DEGREE):
+                if (values[i] < LOWER_BOUND_DEGREE) or (values[i] > UPPER_BOUND_DEGREE): # [-270, 270]
                     raise JointOutOfRangeError(
                         f"Wrong motor position range detected for {name}. "
                         f"Expected to be in nominal range of [-{HALF_TURN_DEGREE}, {HALF_TURN_DEGREE}] degrees (a full rotation), "
@@ -469,7 +469,7 @@ class FeetechMotorsBus:
                         "You need to recalibrate by running: `python lerobot/scripts/control_robot.py calibrate`"
                     )
 
-            elif CalibrationMode[calib_mode] == CalibrationMode.LINEAR:
+            elif CalibrationMode[calib_mode] == CalibrationMode.LINEAR: # calib_idx = 5时候，是LINEAR模式
                 start_pos = self.calibration["start_pos"][calib_idx]
                 end_pos = self.calibration["end_pos"][calib_idx]
 
@@ -768,7 +768,7 @@ class FeetechMotorsBus:
             values = self.avoid_rotation_reset(values, motor_names, data_name)
 
         if data_name in CALIBRATION_REQUIRED and self.calibration is not None:
-            values = self.apply_calibration_autocorrect(values, motor_names)
+            values = self.apply_calibration_autocorrect(values, motor_names) # 这里将整数值转换为角度值, [-270,270]
 
         # log the number of seconds it took to read the data from the motors
         delta_ts_name = get_log_name("delta_timestamp_s", "read", data_name, motor_names)
