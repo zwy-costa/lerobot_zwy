@@ -28,6 +28,8 @@ import rerun as rr
 import torch
 from deepdiff import DeepDiff
 from termcolor import colored
+import cv2
+import numpy as np
 
 from lerobot.common.datasets.image_writer import safe_stop_image_writer
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
@@ -262,6 +264,10 @@ def control_loop(
                 pred_action = predict_action( # shape = [6] ???
                     observation, policy, get_safe_torch_device(policy.config.device), policy.config.use_amp
                 )
+                
+                # pred_action = pred_action * (180 / np.pi)
+                # pred_action = (pred_action + 180) / 360 * 540 - 270
+
                 # Action can eventually be clipped using `max_relative_target`,
                 # so action actually sent is saved in the dataset.
                 action = robot.send_action(pred_action)
@@ -273,14 +279,20 @@ def control_loop(
 
         # TODO(Steven): This should be more general (for RemoteRobot instead of checking the name, but anyways it will change soon)
         if (display_data and not is_headless()) or (display_data and robot.robot_type.startswith("lekiwi")):
+
+
             if action is not None:
                 for k, v in action.items():
                     for i, vv in enumerate(v):
                         rr.log(f"sent_{k}_{i}", rr.Scalar(vv.numpy()))
 
+            # image_keys = [key for key in observation if "image" in key]
+            # for key in image_keys:
+            #     rr.log(key, rr.Image(observation[key].numpy()), static=True)
             image_keys = [key for key in observation if "image" in key]
             for key in image_keys:
-                rr.log(key, rr.Image(observation[key].numpy()), static=True)
+                cv2.imshow(key, cv2.cvtColor(observation[key].numpy(), cv2.COLOR_RGB2BGR))
+            cv2.waitKey(1)
 
         if fps is not None:
             dt_s = time.perf_counter() - start_loop_t # 每次 预测 + 执行 的时间

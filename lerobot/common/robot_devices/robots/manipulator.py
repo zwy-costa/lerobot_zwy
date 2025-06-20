@@ -327,7 +327,7 @@ class ManipulatorRobot:
 
             return calibration
 
-        for name, arm in self.follower_arms.items():
+        for name, arm in self.follower_arms.items(): # 这里是读calibration中的标定json文件
             calibration = load_or_run_calibration_(name, arm, "follower")
             arm.set_calibration(calibration)
         for name, arm in self.leader_arms.items():
@@ -454,7 +454,7 @@ class ManipulatorRobot:
         leader_pos = {}
         for name in self.leader_arms:
             before_lread_t = time.perf_counter()
-            leader_pos[name] = self.leader_arms[name].read("Present_Position")
+            leader_pos[name] = self.leader_arms[name].read("Present_Position") # 这里是读leader数据，进feetech.py
             leader_pos[name] = torch.from_numpy(leader_pos[name])
             self.logs[f"read_leader_{name}_pos_dt_s"] = time.perf_counter() - before_lread_t
 
@@ -475,7 +475,7 @@ class ManipulatorRobot:
             follower_goal_pos[name] = goal_pos
 
             goal_pos = goal_pos.numpy().astype(np.float32)
-            self.follower_arms[name].write("Goal_Position", goal_pos)
+            self.follower_arms[name].write("Goal_Position", goal_pos) # 这里是写入数据
             self.logs[f"write_follower_{name}_goal_pos_dt_s"] = time.perf_counter() - before_fwrite_t
 
         # Early exit when recording data is not requested
@@ -504,6 +504,20 @@ class ManipulatorRobot:
             if name in follower_goal_pos:
                 action.append(follower_goal_pos[name])
         action = torch.cat(action)
+
+        # 0613_Degree2Rad 这里将state 和 action 从 [-270,270] 归一化到 [-180,180] 并转为弧度值
+        # state = (state + 270) / 540 * 360 - 180
+        # state = state * (np.pi / 180)
+
+        # action = (action + 270) / 540 * 360 - 180
+        # action = action * (np.pi / 180)
+
+        # 0613_Degree2Red 将弧度值还原成[-270,270]的角度范围，先验证，后续移动到读取state进行pred_action部分
+        # state_ori = state * (180 / np.pi)
+        # state_ori = (state_ori + 180) / 360 * 540 - 270
+        
+        # action_ori = action * (180 / np.pi)
+        # action_ori = (action_ori + 180) / 360 * 540 - 270
 
         # Capture images from cameras
         images = {}
